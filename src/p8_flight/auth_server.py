@@ -13,37 +13,37 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 
 class AuthHandler(flight.ServerAuthHandler):
-    """Flight服务器认证处理器"""
+    """Flight server authentication processor"""
     
     def __init__(self):
         super().__init__()
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.DEBUG)
         
-        # 添加控制台处理器
+        # Add console handler
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.DEBUG)
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         console_handler.setFormatter(formatter)
         self.logger.addHandler(console_handler)
         
-        # 模拟用户数据库
+        # Simulated user database
         self.users = {
             "admin": "admin123",
             "user1": "user123",
             "readonly": "read123"
         }
-        # 用户权限
+        # User permissions
         self.permissions = {
             "admin": ["read", "write", "delete"],
             "user1": ["read", "write"],
             "readonly": ["read"]
         }
-        # 活跃令牌
+        # Active tokens
         self.tokens = {}
     
     def authenticate(self, outgoing, incoming):
-        """处理客户端认证"""
+        """Handle client authentication"""
         try:
             self.logger.debug("Starting authentication process")
             auth_data = incoming.read()
@@ -74,7 +74,7 @@ class AuthHandler(flight.ServerAuthHandler):
                     self.logger.error("Invalid password")
                     raise flight.FlightUnauthenticatedError("Invalid username or password")
                 
-                # 使用用户名作为令牌
+                # Use username as token
                 token = username
                 self.tokens[token] = username
                 
@@ -91,7 +91,7 @@ class AuthHandler(flight.ServerAuthHandler):
             raise
     
     def is_valid(self, token):
-        """验证令牌有效性"""
+        """Validate token validity"""
         try:
             self.logger.debug(f"Validating token: {token}")
             
@@ -115,7 +115,7 @@ class AuthHandler(flight.ServerAuthHandler):
             return None
     
     def get_user_permissions(self, token):
-        """获取用户权限"""
+        """Get user permissions"""
         if not token:
             return []
         
@@ -127,52 +127,52 @@ class AuthHandler(flight.ServerAuthHandler):
         return self.permissions.get(username, [])
 
 class DuckDBConnectionPool:
-    """DuckDB连接池"""
+    """DuckDB Connection Pool"""
     def __init__(self, db_path="test.db", max_connections=10):
         self.db_path = db_path
         self.max_connections = max_connections
         self.connections = queue.Queue(maxsize=max_connections)
         self.lock = threading.Lock()
         
-        # 确保数据库目录存在
+        # Ensure database directory exists
         os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
         
-        # 创建主数据库连接并初始化
+        # Create main database connection and initialize
         self.main_conn = duckdb.connect(db_path)
         self._init_db(self.main_conn)
         
-        # 初始化连接池中的连接
+        # Initialize connections in the pool
         for _ in range(max_connections):
             conn = duckdb.connect(db_path)
             self.connections.put(conn)
     
     def _init_db(self, conn):
-        """初始化数据库schema"""
+        """Initialize database schema"""
         with self.lock:
             conn.execute("DROP TABLE IF EXISTS test")
             conn.execute("CREATE TABLE test (id INTEGER, name VARCHAR)")
             conn.execute("INSERT INTO test VALUES (1, 'Alice'), (2, 'Bob')")
     
     def get_connection(self):
-        """获取连接"""
+        """Get a connection from the pool"""
         try:
             return self.connections.get(timeout=5)
         except queue.Empty:
-            raise Exception("无法获取数据库连接，连接池已满")
+            raise Exception("Cannot get database connection, pool is full")
     
     def return_connection(self, conn):
-        """归还连接"""
+        """Return a connection to the pool"""
         self.connections.put(conn)
     
     def close(self):
-        """关闭所有连接"""
+        """Close all connections"""
         while not self.connections.empty():
             conn = self.connections.get()
             conn.close()
         self.main_conn.close()
 
 class RemoteServerManager:
-    """远程服务器连接管理器"""
+    """Remote server connection manager"""
     
     def __init__(self):
         self.remote_servers = {}
@@ -181,7 +181,7 @@ class RemoteServerManager:
         self.logger = logging.getLogger(__name__)
     
     def add_remote_server(self, server_id, host, port, username=None, password=None):
-        """添加远程服务器配置"""
+        """Add remote server configuration"""
         with self.lock:
             self.remote_servers[server_id] = {
                 "host": host,
@@ -191,18 +191,18 @@ class RemoteServerManager:
             }
     
     def get_client(self, server_id):
-        """获取或创建到远程服务器的客户端连接"""
+        """Get or create a client connection to the remote server"""
         if server_id not in self.clients:
             with self.lock:
                 if server_id not in self.clients:
                     server_info = self.remote_servers.get(server_id)
                     if not server_info:
-                        raise ValueError(f"未找到服务器配置: {server_id}")
+                        raise ValueError(f"Server configuration not found: {server_id}")
                     
                     location = f"grpc://{server_info['host']}:{server_info['port']}"
                     client = flight.FlightClient(location)
                     
-                    # 如果提供了认证信息，进行认证
+                    # If authentication information is provided, authenticate
                     if server_info["username"] and server_info["password"]:
                         auth_data = json.dumps({
                             "username": server_info["username"],
@@ -219,21 +219,21 @@ class RemoteServerManager:
         return self.clients[server_id]
     
     def get_remote_data(self, server_id, query):
-        """从远程服务器获取数据"""
+        """Get data from the remote server"""
         try:
             client = self.get_client(server_id)
             flight_desc = flight.FlightDescriptor.for_command(query)
             
-            # 获取Flight信息
+            # Get Flight information
             flight_info = client.get_flight_info(flight_desc)
             
-            # 获取数据
+            # Get data
             reader = client.do_get(flight_info.endpoints[0].ticket)
             table = reader.read_all()
             
             return table
         except Exception as e:
-            self.logger.error(f"从远程服务器 {server_id} 获取数据失败: {str(e)}")
+            self.logger.error(f"Failed to get data from remote server {server_id}: {str(e)}")
             raise
 
 class AuthenticatedFlightServer(flight.FlightServerBase):
@@ -247,7 +247,7 @@ class AuthenticatedFlightServer(flight.FlightServerBase):
         self.setup_logging()
     
     def setup_logging(self):
-        """设置日志"""
+        """Set up logging"""
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s'
@@ -255,7 +255,7 @@ class AuthenticatedFlightServer(flight.FlightServerBase):
         self.logger = logging.getLogger(__name__)
     
     def _check_permission(self, context, required_permission):
-        """检查用户权限"""
+        """Check user permissions"""
         try:
             peer = context.peer()
             peer_identity = context.peer_identity()
@@ -274,21 +274,21 @@ class AuthenticatedFlightServer(flight.FlightServerBase):
             raise
 
     def get_flight_info(self, context, descriptor):
-        """处理Flight描述符并返回元数据"""
+        """Process Flight descriptor and return metadata"""
         self._check_permission(context, "read")
         
         start_time = datetime.now()
         query = descriptor.command.decode("utf-8")
-        self.logger.info(f"收到查询请求: {query}")
+        self.logger.info(f"Received query request: {query}")
         
         conn = self.connection_pool.get_connection()
         try:
-            # 从DuckDB获取schema
+            # Get schema from DuckDB
             result = conn.execute(f"SELECT * FROM ({query}) LIMIT 0")
             arrow_table = result.fetch_arrow_table()
             
-            # 构建Flight信息
-            ticket = flight.Ticket(descriptor.command)  # 使用原始命令作为ticket
+            # Build Flight information
+            ticket = flight.Ticket(descriptor.command)  # Use original command as ticket
             endpoint = flight.FlightEndpoint(
                 ticket,
                 [flight.Location.for_grpc_tcp("localhost", 8815)]
@@ -303,81 +303,81 @@ class AuthenticatedFlightServer(flight.FlightServerBase):
             )
             
             end_time = datetime.now()
-            self.logger.info(f"查询元数据处理完成，耗时: {end_time - start_time}")
+            self.logger.info(f"Query metadata processing completed, time taken: {end_time - start_time}")
             return flight_info
             
         finally:
             self.connection_pool.return_connection(conn)
 
     def do_get(self, context, ticket):
-        """执行查询并返回Arrow数据流"""
+        """Execute query and return Arrow data stream"""
         self._check_permission(context, "read")
         
         start_time = datetime.now()
         query = ticket.ticket.decode("utf-8")
-        self.logger.info(f"执行查询: {query}")
+        self.logger.info(f"Executing query: {query}")
         
         conn = self.connection_pool.get_connection()
         try:
-            # 使用线程池执行查询
+            # Use thread pool to execute query
             future = self.executor.submit(self._execute_query, conn, query)
             table = future.result()
             
             end_time = datetime.now()
-            self.logger.info(f"查询执行完成，耗时: {end_time - start_time}")
+            self.logger.info(f"Query execution completed, time taken: {end_time - start_time}")
             return flight.RecordBatchStream(table)
             
         finally:
             self.connection_pool.return_connection(conn)
     
     def do_put(self, context, descriptor, reader, writer):
-        """处理数据修改请求"""
+        """Handle data modification request"""
         start_time = datetime.now()
         try:
-            # 解析命令
+            # Parse command
             command = json.loads(descriptor.command.decode("utf-8"))
             operation = command.get("operation")
             query = command.get("query")
             
-            # 检查权限
+            # Check permissions
             if operation == "DELETE":
                 self._check_permission(context, "delete")
             else:
                 self._check_permission(context, "write")
             
-            self.logger.info(f"收到数据修改请求: {operation} - {query}")
+            self.logger.info(f"Received data modification request: {operation} - {query}")
             
             conn = self.connection_pool.get_connection()
             try:
-                # 获取修改前的行数
+                # Get row count before modification
                 before_count = conn.execute("SELECT COUNT(*) FROM test").fetchone()[0]
                 
-                # 执行修改操作
-                with self.connection_pool.lock:  # 使用锁来确保修改操作的原子性
+                # Execute modification operation
+                with self.connection_pool.lock:  # Use lock to ensure atomic modification
                     conn.execute(query)
                 
-                # 获取修改后的行数
+                # Get row count after modification
                 after_count = conn.execute("SELECT COUNT(*) FROM test").fetchone()[0]
                 
-                # 计算影响的行数
+                # Calculate affected rows
                 affected_rows = abs(after_count - before_count)
                 if operation == "UPDATE":
-                    # 对于UPDATE，我们需要实际执行查询来获取影响的行数
+                    # For UPDATE, we need to execute query to get affected rows
                     if "WHERE" in query.upper():
                         where_clause = query.upper().split("WHERE")[1]
                         affected_rows = conn.execute(f"SELECT COUNT(*) FROM test WHERE {where_clause}").fetchone()[0]
                 
-                # 返回结果
+                # Return result
                 response = {
                     "status": "success",
                     "affected_rows": affected_rows,
-                    "message": f"{operation} 操作成功完成"
+                    "message": f"{operation} operation completed successfully"
                 }
                 
                 end_time = datetime.now()
-                self.logger.info(f"数据修改完成，耗时: {end_time - start_time}")
+                self.logger.info(f"Data modification completed, time taken: {end_time - start_time}")
                 
-                # 写入响应
+                # Write response
                 writer.write(json.dumps(response).encode("utf-8"))
                 
             finally:
@@ -392,38 +392,38 @@ class AuthenticatedFlightServer(flight.FlightServerBase):
             raise
     
     def _execute_query(self, conn, query):
-        """执行查询，支持远程数据获取"""
+        """Execute query, support remote data retrieval"""
         try:
-            # 检查是否包含远程查询标记
+            # Check if remote query marker is included
             if "/*remote_server:" in query:
-                # 解析远程服务器ID
+                # Parse remote server ID
                 server_id = query[query.find("/*remote_server:") + 15:query.find("*/")].strip()
-                # 提取实际查询
+                # Extract actual query
                 actual_query = query[query.find("*/") + 2:].strip()
                 
-                # 从远程服务器获取数据
-                self.logger.info(f"从远程服务器 {server_id} 获取数据")
+                # Get data from remote server
+                self.logger.info(f"Getting data from remote server {server_id}")
                 return self.remote_manager.get_remote_data(server_id, actual_query)
             else:
-                # 本地查询
+                # Local query
                 result = conn.execute(query)
                 return result.fetch_arrow_table()
         except Exception as e:
-            self.logger.error(f"查询执行失败: {str(e)}")
+            self.logger.error(f"Query execution failed: {str(e)}")
             raise
     
     def shutdown(self):
-        """关闭服务器"""
+        """Shut down server"""
         self.connection_pool.close()
         super().shutdown()
 
 def main():
-    # 设置服务器参数
-    max_workers = 10  # 最大工作线程数
-    max_connections = 10  # 最大数据库连接数
-    db_path = "data/test.db"  # 数据库文件路径
+    # Set server parameters
+    max_workers = 10  # Maximum number of worker threads
+    max_connections = 10  # Maximum number of database connections
+    db_path = "data/test.db"  # Database file path
     
-    # 确保数据目录存在
+    # Ensure data directory exists
     os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
     
     server = AuthenticatedFlightServer(

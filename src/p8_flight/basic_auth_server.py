@@ -2,7 +2,7 @@ import pyarrow as pa
 import pyarrow.flight as flight
 import logging
 
-# 配置日志
+# Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -12,23 +12,23 @@ logger = logging.getLogger(__name__)
 class BasicAuthHandler(flight.ServerAuthHandler):
     def __init__(self):
         super().__init__()
-        # 用户凭证
+        # User credentials
         self.users = {
             "admin": "admin123",
             "user1": "pass1",
             "user2": "pass2"
         }
-        # 用户权限
+        # User permissions
         self.basic_auth = {
             "admin": ["db1", "db2"],
             "user1": ["db1"],
             "user2": ["db2"]
         }
-        # 活跃令牌
+        # Active tokens
         self.tokens = {}
     
     def authenticate(self, outgoing, incoming):
-        """处理认证请求"""
+        """Handle authentication request"""
         try:
             auth_data = incoming.read()
             if not auth_data:
@@ -40,7 +40,7 @@ class BasicAuthHandler(flight.ServerAuthHandler):
             if username not in self.users or self.users[username] != password:
                 raise flight.FlightUnauthenticatedError("Invalid credentials")
             
-            # 使用用户名作为令牌
+            # Use username as token
             token = username.encode()
             self.tokens[token] = username
             outgoing.write(token)
@@ -51,7 +51,7 @@ class BasicAuthHandler(flight.ServerAuthHandler):
             raise
     
     def is_valid(self, token):
-        """验证令牌"""
+        """Validate token"""
         try:
             if not token:
                 return None
@@ -66,7 +66,7 @@ class BasicAuthServer(flight.FlightServerBase):
         super().__init__(location, auth_handler=auth_handler or BasicAuthHandler())
         self.auth_handler = auth_handler or BasicAuthHandler()
         
-        # 创建示例数据
+        # Create example data
         self.databases = {
             "db1": pa.Table.from_arrays(
                 [pa.array([1, 2, 3]), pa.array(['a', 'b', 'c'])],
@@ -79,34 +79,34 @@ class BasicAuthServer(flight.FlightServerBase):
         }
     
     def do_get(self, context, ticket):
-        """处理数据获取请求"""
+        """Handle data retrieval request"""
         try:
-            # 获取用户和请求的数据库
+            # Get user and requested database
             username = context.peer_identity().decode()
             db_name = ticket.ticket.decode()
             
-            # 检查权限
+            # Check permissions
             if db_name not in self.auth_handler.basic_auth.get(username, []):
                 raise flight.FlightServerError(f"User {username} cannot access {db_name}")
             
-            # 返回数据
+            # Return data
             return flight.RecordBatchStream(self.databases[db_name])
         except Exception as e:
             logger.error(f"Error in do_get: {e}")
             raise
     
     def get_flight_info(self, context, descriptor):
-        """处理Flight信息请求"""
+        """Handle Flight information request"""
         try:
-            # 获取用户和请求的数据库
+            # Get user and requested database
             username = context.peer_identity().decode()
             db_name = descriptor.command.decode()
             
-            # 检查权限
+            # Check permissions
             if db_name not in self.auth_handler.basic_auth.get(username, []):
                 raise flight.FlightServerError(f"User {username} cannot access {db_name}")
             
-            # 返回数据信息
+            # Return data information
             data = self.databases[db_name]
             return flight.FlightInfo(
                 data.schema,

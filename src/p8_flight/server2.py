@@ -2,7 +2,7 @@ import pyarrow as pa
 import pyarrow.flight as flight
 import logging
 
-# 配置日志
+# Configure log
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class FlightServer2(flight.FlightServerBase):
     def __init__(self):
         super().__init__("grpc://localhost:8816")
-        # 创建服务器2的示例数据
+        # Create server 2 sample data
         self.data = pa.Table.from_arrays(
             [pa.array([4, 5, 6]), pa.array(['server2-x', 'server2-y', 'server2-z'])],
             names=['id', 'name']

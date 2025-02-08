@@ -2,7 +2,7 @@ import pyarrow as pa
 import pyarrow.flight as flight
 import logging
 
-# 配置日志
+# Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -14,7 +14,7 @@ class MinimalFlightServer(flight.FlightServerBase):
         super().__init__("grpc://0.0.0.0:8815")
         self.logger = logging.getLogger(__name__)
         
-        # 创建一些示例数据
+        # Create sample data
         self.data = pa.Table.from_arrays(
             [pa.array([1, 2, 3]), pa.array(['a', 'b', 'c'])],
             names=['id', 'name']
@@ -23,12 +23,12 @@ class MinimalFlightServer(flight.FlightServerBase):
         self.logger.debug("Server initialized")
     
     def do_get(self, context, ticket):
-        """处理数据获取请求"""
+        """Handle data retrieval request"""
         self.logger.debug(f"Received get request with ticket: {ticket}")
         return flight.RecordBatchStream(self.data)
     
     def get_flight_info(self, context, descriptor):
-        """处理Flight信息请求"""
+        """Handle Flight information request"""
         self.logger.debug(f"Received flight info request with descriptor: {descriptor}")
         
         endpoints = [flight.FlightEndpoint(

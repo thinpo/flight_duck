@@ -61,29 +61,29 @@ class BasicAuthClient:
             raise
 
 def test_client():
-    """测试客户端"""
+    """Test client functionality"""
     client = BasicAuthClient()
     
-    # 测试不同用户访问不同数据库
+    # Test different users accessing different databases
     test_cases = [
-        ("admin", "admin123", "db1"),  # 管理员访问db1（允许）
-        ("admin", "admin123", "db2"),  # 管理员访问db2（允许）
-        ("user1", "pass1", "db1"),     # user1访问db1（允许）
-        ("user1", "pass1", "db2"),     # user1访问db2（不允许）
-        ("user2", "pass2", "db1"),     # user2访问db1（不允许）
-        ("user2", "pass2", "db2"),     # user2访问db2（允许）
-        ("unknown", "wrong", "db1")    # 未知用户（不允许）
+        ("admin", "admin123", "db1"),  # Admin accessing db1 (allowed)
+        ("admin", "admin123", "db2"),  # Admin accessing db2 (allowed)
+        ("user1", "pass1", "db1"),     # user1 accessing db1 (allowed)
+        ("user1", "pass1", "db2"),     # user1 accessing db2 (not allowed)
+        ("user2", "pass2", "db1"),     # user2 accessing db1 (not allowed)
+        ("user2", "pass2", "db2"),     # user2 accessing db2 (allowed)
+        ("unknown", "wrong", "db1")    # Unknown user (not allowed)
     ]
     
     for username, password, db_name in test_cases:
-        print(f"\n测试用例: 用户={username}, 数据库={db_name}")
+        print(f"\nTest case: user={username}, database={db_name}")
         try:
             client.authenticate(username, password)
             table = client.get_data(db_name)
-            print(f"成功获取数据:")
+            print(f"Successfully retrieved data:")
             print(table.to_pandas())
         except Exception as e:
-            print(f"访问失败: {str(e)}")
+            print(f"Access failed: {str(e)}")
 
 if __name__ == "__main__":
     test_client() 

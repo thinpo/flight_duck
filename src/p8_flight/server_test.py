@@ -13,7 +13,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def run_server(port, db_path):
-    """运行服务器"""
+    """Run server"""
     try:
         server = AuthenticatedFlightServer(
             f"grpc://localhost:{port}",
@@ -26,23 +26,23 @@ def run_server(port, db_path):
         logger.error(f"Server error: {e}")
 
 def test_remote_query():
-    """测试远程查询"""
+    """Test remote query"""
     try:
-        # 连接到服务器
+        # Connect to server
         client = flight.FlightClient("grpc://localhost:8815")
         
-        # 认证
+        # Authenticate
         auth = b"admin:admin123"
         client.authenticate_basic_token(auth)
         
-        # 执行查询
+        # Execute query
         query = "SELECT * FROM test"
         flight_desc = flight.FlightDescriptor.for_command(query)
         
-        # 获取Flight信息
+        # Get Flight information
         flight_info = client.get_flight_info(flight_desc)
         
-        # 获取数据
+        # Get data
         reader = client.do_get(flight_info.endpoints[0].ticket)
         table = reader.read_all()
         
@@ -53,10 +53,10 @@ def test_remote_query():
         logger.error(f"Test error: {e}")
 
 def main():
-    # 创建数据目录
+    # Create data directory
     os.makedirs("data", exist_ok=True)
     
-    # 启动服务器
+    # Start server
     server_thread = threading.Thread(
         target=run_server,
         args=(8815, "data/test.db")
@@ -67,14 +67,14 @@ def main():
         logger.info("Starting server...")
         server_thread.start()
         
-        # 等待服务器启动
+        # Wait for server to start
         time.sleep(2)
         
-        # 运行测试
+        # Run tests
         logger.info("Running test...")
         test_remote_query()
         
-        # 保持主线程运行
+        # Keep main thread running
         while True:
             time.sleep(1)
             
