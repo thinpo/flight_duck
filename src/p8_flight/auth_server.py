@@ -17,11 +17,21 @@ class AuthHandler(flight.ServerAuthHandler):
     
     def __init__(self):
         super().__init__()
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.DEBUG)
+        
+        # 添加控制台处理器
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        console_handler.setFormatter(formatter)
+        self.logger.addHandler(console_handler)
+        
         # 模拟用户数据库
         self.users = {
-            "admin": self._hash_password("admin123"),
-            "user1": self._hash_password("user123"),
-            "readonly": self._hash_password("read123")
+            "admin": "admin123",
+            "user1": "user123",
+            "readonly": "read123"
         }
         # 用户权限
         self.permissions = {
@@ -31,64 +41,78 @@ class AuthHandler(flight.ServerAuthHandler):
         }
         # 活跃令牌
         self.tokens = {}
-        # 令牌过期时间（1小时）
-        self.token_expiry = timedelta(hours=1)
-    
-    def _hash_password(self, password):
-        """密码哈希"""
-        return hashlib.sha256(password.encode()).hexdigest()
-    
-    def _generate_token(self):
-        """生成随机令牌"""
-        return base64.b64encode(secrets.token_bytes(32)).decode()
     
     def authenticate(self, outgoing, incoming):
         """处理客户端认证"""
-        auth_data = incoming.read()
-        if not auth_data:
-            raise flight.FlightUnauthenticatedError("No credentials")
-        
         try:
-            auth = json.loads(auth_data)
-            username = auth.get("username")
-            password = auth.get("password")
+            self.logger.debug("Starting authentication process")
+            auth_data = incoming.read()
             
-            if not username or not password:
-                raise flight.FlightUnauthenticatedError("Invalid credentials format")
+            if not auth_data:
+                self.logger.error("No authentication data received")
+                raise flight.FlightUnauthenticatedError("No credentials")
             
-            stored_hash = self.users.get(username)
-            if not stored_hash or stored_hash != self._hash_password(password):
-                raise flight.FlightUnauthenticatedError("Invalid username or password")
+            self.logger.debug(f"Received auth data: {auth_data}")
             
-            # 生成新令牌
-            token = self._generate_token()
-            self.tokens[token] = {
-                "username": username,
-                "expires": datetime.now() + self.token_expiry
-            }
-            
-            # 返回令牌给客户端
-            outgoing.write(token.encode())
-            
-        except json.JSONDecodeError:
-            raise flight.FlightUnauthenticatedError("Invalid credentials format")
+            try:
+                auth_str = auth_data.decode('utf-8')
+                self.logger.debug(f"Decoded auth string: {auth_str}")
+                
+                username, password = auth_str.split(':', 1)
+                self.logger.debug(f"Extracted username: {username}")
+                
+                if not username or not password:
+                    self.logger.error("Missing username or password")
+                    raise flight.FlightUnauthenticatedError("Invalid credentials format")
+                
+                stored_password = self.users.get(username)
+                if not stored_password:
+                    self.logger.error(f"User not found: {username}")
+                    raise flight.FlightUnauthenticatedError("Invalid username or password")
+                
+                if stored_password != password:
+                    self.logger.error("Invalid password")
+                    raise flight.FlightUnauthenticatedError("Invalid username or password")
+                
+                # 使用用户名作为令牌
+                token = username
+                self.tokens[token] = username
+                
+                self.logger.debug(f"Generated token for user {username}: {token}")
+                outgoing.write(token.encode())
+                self.logger.info(f"Authentication successful for user: {username}")
+                
+            except Exception as e:
+                self.logger.error(f"Error during authentication: {str(e)}")
+                raise flight.FlightUnauthenticatedError(str(e))
+                
+        except Exception as e:
+            self.logger.error(f"Authentication error: {str(e)}")
+            raise
     
     def is_valid(self, token):
         """验证令牌有效性"""
-        if not token:
+        try:
+            self.logger.debug(f"Validating token: {token}")
+            
+            if not token:
+                self.logger.debug("No token provided")
+                return None
+            
+            token_str = token.decode() if isinstance(token, bytes) else str(token)
+            self.logger.debug(f"Looking up token: {token_str}")
+            
+            username = self.tokens.get(token_str)
+            if not username:
+                self.logger.debug("Token not found")
+                return None
+            
+            self.logger.debug(f"Token valid for user: {username}")
+            return token_str.encode()
+            
+        except Exception as e:
+            self.logger.error(f"Token validation error: {str(e)}")
             return None
-        
-        token_str = token.decode() if isinstance(token, bytes) else str(token)
-        token_info = self.tokens.get(token_str)
-        if not token_info:
-            return None
-        
-        # 检查令牌是否过期
-        if datetime.now() > token_info["expires"]:
-            del self.tokens[token_str]
-            return None
-        
-        return token_str.encode()
     
     def get_user_permissions(self, token):
         """获取用户权限"""
@@ -96,11 +120,10 @@ class AuthHandler(flight.ServerAuthHandler):
             return []
         
         token_str = token.decode() if isinstance(token, bytes) else str(token)
-        token_info = self.tokens.get(token_str)
-        if not token_info:
+        username = self.tokens.get(token_str)
+        if not username:
             return []
         
-        username = token_info["username"]
         return self.permissions.get(username, [])
 
 class DuckDBConnectionPool:
@@ -148,6 +171,71 @@ class DuckDBConnectionPool:
             conn.close()
         self.main_conn.close()
 
+class RemoteServerManager:
+    """远程服务器连接管理器"""
+    
+    def __init__(self):
+        self.remote_servers = {}
+        self.clients = {}
+        self.lock = threading.Lock()
+        self.logger = logging.getLogger(__name__)
+    
+    def add_remote_server(self, server_id, host, port, username=None, password=None):
+        """添加远程服务器配置"""
+        with self.lock:
+            self.remote_servers[server_id] = {
+                "host": host,
+                "port": port,
+                "username": username,
+                "password": password
+            }
+    
+    def get_client(self, server_id):
+        """获取或创建到远程服务器的客户端连接"""
+        if server_id not in self.clients:
+            with self.lock:
+                if server_id not in self.clients:
+                    server_info = self.remote_servers.get(server_id)
+                    if not server_info:
+                        raise ValueError(f"未找到服务器配置: {server_id}")
+                    
+                    location = f"grpc://{server_info['host']}:{server_info['port']}"
+                    client = flight.FlightClient(location)
+                    
+                    # 如果提供了认证信息，进行认证
+                    if server_info["username"] and server_info["password"]:
+                        auth_data = json.dumps({
+                            "username": server_info["username"],
+                            "password": server_info["password"]
+                        }).encode()
+                        writer, reader = client.authenticate_basic_token()
+                        writer.write(auth_data)
+                        writer.done_writing()
+                        token = reader.read()
+                        self.logger.info(f"Successfully authenticated with remote server {server_id}")
+                    
+                    self.clients[server_id] = client
+        
+        return self.clients[server_id]
+    
+    def get_remote_data(self, server_id, query):
+        """从远程服务器获取数据"""
+        try:
+            client = self.get_client(server_id)
+            flight_desc = flight.FlightDescriptor.for_command(query)
+            
+            # 获取Flight信息
+            flight_info = client.get_flight_info(flight_desc)
+            
+            # 获取数据
+            reader = client.do_get(flight_info.endpoints[0].ticket)
+            table = reader.read_all()
+            
+            return table
+        except Exception as e:
+            self.logger.error(f"从远程服务器 {server_id} 获取数据失败: {str(e)}")
+            raise
+
 class AuthenticatedFlightServer(flight.FlightServerBase):
     def __init__(self, location, db_path="test.db", max_workers=10, max_connections=10):
         self.auth_handler = AuthHandler()
@@ -155,6 +243,7 @@ class AuthenticatedFlightServer(flight.FlightServerBase):
         self.location = location
         self.connection_pool = DuckDBConnectionPool(db_path, max_connections)
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
+        self.remote_manager = RemoteServerManager()
         self.setup_logging()
     
     def setup_logging(self):
@@ -303,8 +392,25 @@ class AuthenticatedFlightServer(flight.FlightServerBase):
             raise
     
     def _execute_query(self, conn, query):
-        """在线程池中执行查询"""
-        return conn.execute(query).fetch_arrow_table()
+        """执行查询，支持远程数据获取"""
+        try:
+            # 检查是否包含远程查询标记
+            if "/*remote_server:" in query:
+                # 解析远程服务器ID
+                server_id = query[query.find("/*remote_server:") + 15:query.find("*/")].strip()
+                # 提取实际查询
+                actual_query = query[query.find("*/") + 2:].strip()
+                
+                # 从远程服务器获取数据
+                self.logger.info(f"从远程服务器 {server_id} 获取数据")
+                return self.remote_manager.get_remote_data(server_id, actual_query)
+            else:
+                # 本地查询
+                result = conn.execute(query)
+                return result.fetch_arrow_table()
+        except Exception as e:
+            self.logger.error(f"查询执行失败: {str(e)}")
+            raise
     
     def shutdown(self):
         """关闭服务器"""
