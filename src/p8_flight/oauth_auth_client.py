@@ -3,7 +3,7 @@ import logging
 import requests
 import os
 
-# 配置日志
+# Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -11,20 +11,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class OAuthHandler(flight.ClientAuthHandler):
-    """OAuth客户端认证处理器"""
+    """OAuth Client Authentication Handler"""
     def __init__(self, token):
         super().__init__()
         self.token = token
         self.bearer_token = None
     
     def authenticate(self, outgoing, incoming):
-        """发送认证信息"""
+        """Send authentication information"""
         auth_str = f"Bearer {self.token}"
         outgoing.write(auth_str.encode())
         self.bearer_token = incoming.read()
     
     def get_token(self):
-        """获取认证令牌"""
+        """Get authentication token"""
         return self.bearer_token
 
 class OAuthClient:
@@ -36,10 +36,10 @@ class OAuthClient:
         self.token = None
     
     def get_token_from_okta(self, username, password):
-        """从Okta获取访问令牌"""
+        """Get access token from Okta"""
         token_url = f"https://{self.okta_domain}/oauth2/default/v1/token"
         
-        # 准备请求数据
+        # Prepare request data
         data = {
             'grant_type': 'password',
             'username': username,
@@ -61,12 +61,12 @@ class OAuthClient:
             raise
     
     def authenticate(self, username, password):
-        """进行认证"""
+        """Perform authentication"""
         try:
-            # 从Okta获取令牌
+            # Get token from Okta
             self.token = self.get_token_from_okta(username, password)
             
-            # 使用令牌进行Flight认证
+            # Use token for Flight authentication
             auth_handler = OAuthHandler(self.token)
             self.client.authenticate(auth_handler)
             logger.info(f"Authenticated as {username}")
@@ -76,15 +76,15 @@ class OAuthClient:
             raise
     
     def get_data(self, db_name):
-        """获取数据"""
+        """Get data from server"""
         try:
-            # 创建请求
+            # Create request
             flight_desc = flight.FlightDescriptor.for_command(db_name.encode())
             
-            # 获取Flight信息
+            # Get Flight info
             flight_info = self.client.get_flight_info(flight_desc)
             
-            # 获取数据
+            # Get data
             reader = self.client.do_get(flight_info.endpoints[0].ticket)
             table = reader.read_all()
             
@@ -94,8 +94,8 @@ class OAuthClient:
             raise
 
 def test_client():
-    """测试客户端"""
-    # 验证环境变量
+    """Test client functionality"""
+    # Validate environment variables
     required_env_vars = ['OKTA_DOMAIN', 'OKTA_CLIENT_ID', 'OKTA_CLIENT_SECRET']
     missing_vars = [var for var in required_env_vars if not os.getenv(var)]
     if missing_vars:
@@ -103,45 +103,45 @@ def test_client():
     
     client = OAuthClient()
     
-    # 测试用例
+    # Test cases
     test_cases = [
         {
             'username': 'admin@example.com',
             'password': 'admin_password',
             'databases': ['db1', 'db2'],
-            'description': '管理员用户（完全访问权限）'
+            'description': 'Admin user (full access)'
         },
         {
             'username': 'user@example.com',
             'password': 'user_password',
             'databases': ['db1'],
-            'description': '普通用户（仅db1访问权限）'
+            'description': 'Regular user (db1 access only)'
         },
         {
             'username': 'readonly@example.com',
             'password': 'readonly_password',
             'databases': ['db2'],
-            'description': '只读用户（仅db2访问权限）'
+            'description': 'Read-only user (db2 access only)'
         }
     ]
     
     for test_case in test_cases:
-        print(f"\n测试用例: {test_case['description']}")
+        print(f"\nTest case: {test_case['description']}")
         try:
-            # 认证
+            # Authenticate
             client.authenticate(test_case['username'], test_case['password'])
             
-            # 测试数据库访问
+            # Test database access
             for db_name in test_case['databases']:
                 try:
                     table = client.get_data(db_name)
-                    print(f"\n成功访问数据库 {db_name}:")
+                    print(f"\nSuccessfully accessed database {db_name}:")
                     print(table.to_pandas())
                 except Exception as e:
-                    print(f"访问数据库 {db_name} 失败: {str(e)}")
+                    print(f"Failed to access database {db_name}: {str(e)}")
                     
         except Exception as e:
-            print(f"认证失败: {str(e)}")
+            print(f"Authentication failed: {str(e)}")
 
 if __name__ == "__main__":
     test_client() 

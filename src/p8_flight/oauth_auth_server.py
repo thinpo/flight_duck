@@ -6,7 +6,7 @@ import requests
 from okta_jwt_verifier import JWTVerifier
 from datetime import datetime, timedelta
 
-# 配置日志
+# Configure logging
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -14,7 +14,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class OktaAuthHandler(flight.ServerAuthHandler):
-    """Okta OAuth认证处理器"""
+    """Okta OAuth Authentication Handler"""
     def __init__(self, okta_domain, client_id, client_secret, audience):
         super().__init__()
         self.okta_domain = okta_domain
@@ -26,19 +26,19 @@ class OktaAuthHandler(flight.ServerAuthHandler):
             client_id=client_id,
             audience=audience
         )
-        # 用户权限映射
+        # User permissions mapping
         self.user_permissions = {
             "admin_role": ["db1", "db2"],
             "user_role": ["db1"],
             "readonly_role": ["db2"]
         }
-        # 令牌缓存
+        # Token cache
         self.token_cache = {}
     
     def verify_token(self, token):
-        """验证JWT令牌"""
+        """Verify JWT token"""
         try:
-            # 使用同步方式验证令牌
+            # Verify token synchronously
             jwt_token = self.jwt_verifier.verify_access_token_sync(token)
             return jwt_token
         except Exception as e:
@@ -46,36 +46,36 @@ class OktaAuthHandler(flight.ServerAuthHandler):
             return None
     
     def authenticate(self, outgoing, incoming):
-        """处理认证请求"""
+        """Handle authentication request"""
         try:
             auth_data = incoming.read()
             if not auth_data:
                 raise flight.FlightUnauthenticatedError("No credentials")
             
-            # 解析认证数据
+            # Parse authentication data
             auth_str = auth_data.decode('utf-8')
             auth_type, token = auth_str.split(' ', 1)
             
             if auth_type.lower() != 'bearer':
                 raise flight.FlightUnauthenticatedError("Invalid authentication type")
             
-            # 验证令牌
+            # Verify token
             jwt_token = self.verify_token(token)
             if not jwt_token:
                 raise flight.FlightUnauthenticatedError("Invalid token")
             
-            # 获取用户角色
+            # Get user roles
             roles = jwt_token.get('groups', [])
             if not roles:
                 raise flight.FlightUnauthenticatedError("No roles found in token")
             
-            # 缓存令牌信息
+            # Cache token information
             self.token_cache[token] = {
                 'roles': roles,
                 'exp': jwt_token['exp']
             }
             
-            # 返回令牌
+            # Return token
             outgoing.write(token.encode())
             logger.info(f"Authentication successful for user with roles: {roles}")
             
@@ -84,7 +84,7 @@ class OktaAuthHandler(flight.ServerAuthHandler):
             raise
     
     def is_valid(self, token):
-        """验证令牌有效性"""
+        """Validate token"""
         try:
             if not token:
                 return None
@@ -95,7 +95,7 @@ class OktaAuthHandler(flight.ServerAuthHandler):
             if not token_info:
                 return None
             
-            # 检查令牌是否过期
+            # Check if token is expired
             if datetime.utcnow().timestamp() > token_info['exp']:
                 del self.token_cache[token_str]
                 return None
@@ -107,7 +107,7 @@ class OktaAuthHandler(flight.ServerAuthHandler):
             return None
     
     def get_user_permissions(self, token):
-        """获取用户权限"""
+        """Get user permissions"""
         if not token:
             return []
         
@@ -124,7 +124,7 @@ class OktaAuthHandler(flight.ServerAuthHandler):
         return list(permissions)
 
 class OAuthFlightServer(flight.FlightServerBase):
-    """支持OAuth的Flight服务器"""
+    """OAuth-enabled Flight Server"""
     def __init__(self, location="grpc://localhost:8815", 
                  okta_domain=None, client_id=None, 
                  client_secret=None, audience=None):
@@ -136,7 +136,7 @@ class OAuthFlightServer(flight.FlightServerBase):
         )
         super().__init__(location, auth_handler=auth_handler)
         
-        # 创建示例数据
+        # Create sample data
         self.databases = {
             "db1": pa.Table.from_arrays(
                 [pa.array([1, 2, 3]), pa.array(['a', 'b', 'c'])],
@@ -149,22 +149,22 @@ class OAuthFlightServer(flight.FlightServerBase):
         }
     
     def do_get(self, context, ticket):
-        """处理数据获取请求"""
+        """Handle data retrieval request"""
         try:
-            # 获取用户身份
+            # Get user identity
             token = context.peer_identity()
             if not token:
                 raise flight.FlightUnauthenticatedError("Authentication required")
             
-            # 获取请求的数据库
+            # Get requested database
             db_name = ticket.ticket.decode()
             
-            # 检查权限
+            # Check permissions
             permissions = self.auth_handler.get_user_permissions(token)
             if db_name not in permissions:
                 raise flight.FlightServerError(f"Access denied to database {db_name}")
             
-            # 返回数据
+            # Return data
             return flight.RecordBatchStream(self.databases[db_name])
             
         except Exception as e:
@@ -172,22 +172,22 @@ class OAuthFlightServer(flight.FlightServerBase):
             raise
     
     def get_flight_info(self, context, descriptor):
-        """处理Flight信息请求"""
+        """Handle Flight info request"""
         try:
-            # 获取用户身份
+            # Get user identity
             token = context.peer_identity()
             if not token:
                 raise flight.FlightUnauthenticatedError("Authentication required")
             
-            # 获取请求的数据库
+            # Get requested database
             db_name = descriptor.command.decode()
             
-            # 检查权限
+            # Check permissions
             permissions = self.auth_handler.get_user_permissions(token)
             if db_name not in permissions:
                 raise flight.FlightServerError(f"Access denied to database {db_name}")
             
-            # 返回数据信息
+            # Return data info
             data = self.databases[db_name]
             return flight.FlightInfo(
                 data.schema,
@@ -202,7 +202,7 @@ class OAuthFlightServer(flight.FlightServerBase):
             raise
 
 def main():
-    # 从环境变量或配置文件获取Okta配置
+    # Get Okta configuration from environment variables
     import os
     okta_config = {
         'okta_domain': os.getenv('OKTA_DOMAIN'),
@@ -211,7 +211,7 @@ def main():
         'audience': os.getenv('OKTA_AUDIENCE')
     }
     
-    # 验证配置
+    # Validate configuration
     missing_configs = [k for k, v in okta_config.items() if not v]
     if missing_configs:
         raise ValueError(f"Missing Okta configurations: {', '.join(missing_configs)}")
